@@ -1,8 +1,11 @@
 import sys
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
+import time
+import string
 import tweepy
 import json
 import signal
+import urllib
 from boto.s3.connection import S3Connection
 from boto.s3.key import Key
 
@@ -14,27 +17,39 @@ class TweetSerializer:
     lowest_id = None
     lowest_datetime = None
    
-    def start(self):
-        self.count += 1
-        fname = "tweets-"+str(self.count)+".json"
-        self.out = open(fname,"w")
-        self.out.write("[\n")
-        self.first = True
+    #def start(self):
+        #self.count += 1
 
-    def end(self):
-        if self.out is not None:
-            self.out.write("\n]\n")
-            self.out.close()
+    def write(self):
+        if self.count == 0: return []
+
+        print 'Lowest ID: %s' % self.lowest_id
+        print 'Lowest datetime: %s' % self.lowest_datetime
+
+        fname = self.convert_to_string(self.lowest_datetime) + '-' + str(self.lowest_id) + '-' + str(self.count) + '.json'
+        self.out = open('out\\' + fname, "w")
+        self.out.write("[\n")
+
+        self.first = True
+        for entry in self.json_contents:
+            if not self.first: self.out.write(",\n")
+            else: self.first = False
+
+            self.out.write(json.dumps(entry, indent=2, separators=(',', ': ')).encode('utf8'))
+
+        self.out.write("\n]\n")
+        self.out.close()
         self.out = None
 
-        print self.lowest_id
-        print self.lowest_datetime
+        return [self.lowest_id, ('out\\' + fname)]
 
-    def write(self,tweet):
+    def add_tweets(self,tweet):
+        self.count += 1
+
         json_data = { key: tweet._json[key] for key in ['created_at', 'lang', 'text', 'id'] }
         json_data['screen_name'] = tweet._json['user']['screen_name']
 
-        current_lowest_datetime = json_data['created_at']
+        current_lowest_datetime = self.convert_to_float(json_data['created_at'])
         current_lowest_id = json_data['id']
 
         # 2) Process tweets and get: lowest Id, lowest datetime, hasFinalsHashTag, hasWarriorsHashTag, fileName
@@ -48,17 +63,22 @@ class TweetSerializer:
             if current_lowest_id < self.lowest_id:
                 self.lowest_id = current_lowest_id
 
-            self.out.write(",\n")
-
         # Remove later, can be calculated afterwards...
         text = json_data['text'].lower()
-        json_data['HasFinalsHashTag'] = ('#nbafinals2015' in text)
-        json_data['HasWarriorsHashTag'] = ('#warriors' in text)
+        tag1 = ('#nbafinals2015' in text)
+        tag2 = ('#warriors' in text)
+        json_data['HasFinalsHashTag'] = tag1
+        json_data['HasWarriorsHashTag'] = tag2
+        json_data['HasBothHashTag'] = tag1 and tag2
 
         self.first = False
-
         self.json_contents += [json_data]
-        #self.out.write(json.dumps(json_data, indent=2, separators=(',', ': ')).encode('utf8'))
+
+    def convert_to_float(self, date):
+        return time.mktime(time.strptime(date, "%a %b %d %H:%M:%S +0000 %Y"))
+
+    def convert_to_string(self, float):
+        return datetime.fromtimestamp(float).strftime('%Y-%m-%d')
 
 def interrupt(signum, frame):
    print "Interrupted, closing ..."
@@ -85,15 +105,21 @@ def connect_to_Twitter():
 
 def query_Twitter(api, ts, date, max_id = 0):
     nextDate = date + timedelta(days = 1)
-    query = '#NBAFinals2015 OR #Warriors since:' + date.strftime('%Y-%m-%d') + " until:" + nextDate.strftime('%Y-%m-%d') + ((' max_id:%s' % max_id) if max_id > 0 else '')
-    # query = "#NBAFinals2015 OR #Warriors since:2015-06-12 until:2015-06-13 max_id:609510488829853696"
+    #query = '#NBAFinals2015 OR #Warriors since:' + date.strftime('%Y-%m-%d') + " until:" + nextDate.strftime('%Y-%m-%d') + ((' max_id:%s' % max_id) if max_id > 0 else '')
+    query = "#NBAFinals2015 OR #Warriors since:2015-06-12 until:2015-06-13 max_id:609510488829853696"
+    #query = '#NBAFinals2015 OR #Warriors since:2015-06-11 until:2015-06-12 max_id:609147260505563137'
 
+    print 'Starting query: %s' % query
     count = 0
-    for tweet in tweepy.Cursor(api.search, q = query).items(2):
+    #for tweet in tweepy.Cursor(api.search, q = urllib.quote_plus(query)).items(10):
+    for tweet in tweepy.Cursor(api.search, q = query).items(10):
         count += 1
-        ts.write(tweet)
+        ts.add_tweets(tweet)
 
     print "Done. Count: %s" % count
+    results = ts.write()
+    results += [count > 0]
+    return results
 
 def main():
     bucket = connect_to_S3()
@@ -101,7 +127,6 @@ def main():
     signal.signal(signal.SIGINT, interrupt) # Used to interrupt execution
 
     ts = TweetSerializer()
-    ts.start()
 
     # Set start, end, and current dates used to track progress of work.
     start_date = date(2015,06,11)
@@ -109,19 +134,40 @@ def main():
     current_date = start_date
 
     # Process data one day at a time
+    count = 0
+    max_id = 0
     while current_date < date.today() and current_date < end_date:
         print "Current date: %s" % current_date
 
         # 1) Get initial tweets (no max_id used)
-        query_Twitter(api, ts, current_date)
-        ts.end()
+        tuple = query_Twitter(api, ts, current_date, (max_id if count > 0 else 0))
         return
-        # 2) Process tweets and get: lowest Id, lowest datetime, hasFinalsHashTag, hasWarriorsHashTag, fileName
-        # 3) Write to local JSON file
-        # 4)
+        max_id = tuple[0]
+        fname = tuple[1]
+        foundResults = tuple[2]
+        count += 1
 
-        # Move on to next day if all tweets have been processed for the current day.
-        current_date += timedelta(days = 1)
+        if foundResults:
+            # 2) Save contents to S3
+            key = bucket.new_key('%s/%s' % (current_date, fname))
+            key.set_contents_from_filename(fname)
+
+            # 3) Delete JSON file
+
+            print 'Completed query #%s. Sleeping for 1 minute.' % count
+
+            # Time out for 30 seconds
+            time.sleep(60)
+            print 'Continuing exeuction'
+
+            if count > 5:
+                print 'Cancelling'
+                return
+        else:
+            print 'Completed querying all tweets for the day'
+
+            # Move on to next day if all tweets have been processed for the current day.
+            current_date += timedelta(days = 1)
 
     print "failed"
 
