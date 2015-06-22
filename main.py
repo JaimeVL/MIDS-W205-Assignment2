@@ -114,10 +114,10 @@ class Utils:
 
     @staticmethod
     def connect_to_Twitter():
-        consumer_key = "QzphhBGR9WZvmxF9a17OalniM";
-        consumer_secret = "PW6ZM1ZsTKwpoTnL6YqkTKFROpAZ1CNbhwjbXM62PfSSsQxU5G";
-        access_token = "319832087-u0NYYcL6Sj73RwOgcaPMAxHlyPrlDyl02o3Q2ROK";
-        access_token_secret = "cAHHOJo12y18jIIuRapXyJHP2AcOA1oxJqs4rtjwhqg2S";
+        consumer_key = "------------------------";
+        consumer_secret = "-----------------------------------------------------";
+        access_token = "-----------------------------------------------------";
+        access_token_secret = "-----------------------------------------------------";
 
         auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
         auth.set_access_token(access_token, access_token_secret)
@@ -128,12 +128,10 @@ class Utils:
     def query_Twitter(api, ts, date, max_id = 0):
         nextDate = date + timedelta(days = 1)
         query = '#NBAFinals2015 OR #Warriors since:' + date.strftime('%Y-%m-%d') + " until:" + nextDate.strftime('%Y-%m-%d')
-        #query = '#NBAFinals2015 OR #Warriors since:2015-06-11 until:2015-06-12 max_id:609147260505563137'
 
         print 'Starting query (max_id = %s)' % max_id
         count = 0
         if max_id == 0:
-            #for tweet in tweepy.Cursor(api.search, q = urllib.quote_plus(query)).items(10):
             for tweet in tweepy.Cursor(api.search, q = query).items(1000):
                 count += 1
                 ts.add_tweets(tweet)
@@ -320,7 +318,7 @@ def process_tweets():
     Utils.write_counts_to_csv(fd3, 'out/warriors_dist.csv')
 
     # Plot histograms
-    print 'Plotting histograms'
+    print 'Plotting frequency count graphs'
     fd1.plot(30)
     fd2.plot(30)
     fd3.plot(30)
