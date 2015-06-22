@@ -1,6 +1,7 @@
 # MIDS W205 Assignment #2 - Jaime Villlapando #
 
-I collected Twitter data between 2015-06-11 and 2015-06-17 (inclusive). Almost 300K tweets were collected and processed. Below I will describe in more detail the design decisions I took in this assignment.
+Almost 300K tweets were collected and processed between 2015-06-11 and 2015-06-17 (inclusive). Each day took a couple of hours to collect and process, mostly because the rate limit was hit after 3 or 4 queries. 
+Due to the design taken, re-running the program was easy to do even though it was pretty resilient and it only required two runs several days apart. Below I will describe in more detail the design decisions I took in this assignment.
 
 ## Details on Data Acquisition Design ##
 
@@ -44,11 +45,11 @@ Both HashTags | both_dist.csv | both_plot.png
 
 ## Plots ##
 
-1. **Only #NBAFinals2015**
+1. Only #NBAFinals2015
 ![alt text](/out/finals_plot.png "#NBAFinals2015")
 
-2. **Only #Warriors**
+2. Only #Warriors
 ![alt text](/out/warriors_plot.png "#Warriors")
 
-3. **Both hashtags**
+3. Both hashtags
 ![alt text](/out/both_plot.png "Both HashTags")
